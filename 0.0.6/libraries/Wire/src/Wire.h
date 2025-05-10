@@ -19,81 +19,132 @@
   Modified 2012 by Todd Krein (todd@krein.org) to implement repeated starts
   Modified December 2014 by Ivan Grokhotkov (ivan@esp8266.com) - esp8266 support
   Modified April 2015 by Hrsto Gochkov (ficeto@ficeto.com) - alternative esp8266 support
+  Modified November 2017 by Chuck Todd <stickbreaker on GitHub> to use ISR and increase stability.
+  Modified Nov 2021 by Hristo Gochkov <Me-No-Dev> to support ESP-IDF API
 */
 
 #ifndef TwoWire_h
 #define TwoWire_h
 
+#include "soc/soc_caps.h"
+#if SOC_I2C_SUPPORTED
+
 #include <esp32-hal.h>
+#include <esp32-hal-log.h>
+#if !CONFIG_DISABLE_HAL_LOCKS
 #include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
+#endif
+#include "HardwareI2C.h"
 #include "Stream.h"
 
-#define I2C_BUFFER_LENGTH 128
+// WIRE_HAS_BUFFER_SIZE means Wire has setBufferSize()
+#define WIRE_HAS_BUFFER_SIZE 1
+// WIRE_HAS_END means Wire has end()
+#define WIRE_HAS_END 1
 
-class TwoWire: public Stream
-{
+#ifndef I2C_BUFFER_LENGTH
+#define I2C_BUFFER_LENGTH 128  // Default size, if none is set using Wire::setBuffersize(size_t)
+#endif
+#if SOC_I2C_SUPPORT_SLAVE
+typedef void (*user_onRequest)(void);
+typedef void (*user_onReceive)(uint8_t *, int);
+#endif /* SOC_I2C_SUPPORT_SLAVE */
+
+class TwoWire : public HardwareI2C {
 protected:
-    uint8_t num;
-    int8_t sda;
-    int8_t scl;
-    i2c_t * i2c;
+  uint8_t num;
+  int8_t sda;
+  int8_t scl;
 
-    uint8_t rxBuffer[I2C_BUFFER_LENGTH];
-    uint16_t rxIndex;
-    uint16_t rxLength;
+  size_t bufferSize;
+  uint8_t *rxBuffer;
+  size_t rxIndex;
+  size_t rxLength;
 
-    uint8_t txBuffer[I2C_BUFFER_LENGTH];
-    uint16_t txIndex;
-    uint16_t txLength;
-    uint8_t txAddress;
+  uint8_t *txBuffer;
+  size_t txLength;
+  uint16_t txAddress;
 
-    uint8_t transmitting;
+  uint32_t _timeOutMillis;
+  bool nonStop;
+#if !CONFIG_DISABLE_HAL_LOCKS
+  TaskHandle_t currentTaskHandle;
+  SemaphoreHandle_t lock;
+#endif
+private:
+#if SOC_I2C_SUPPORT_SLAVE
+  bool is_slave;
+  void (*user_onRequest)(void);
+  void (*user_onReceive)(int);
+  static void onRequestService(uint8_t, void *);
+  static void onReceiveService(uint8_t, uint8_t *, size_t, bool, void *);
+#endif /* SOC_I2C_SUPPORT_SLAVE */
+  bool initPins(int sdaPin, int sclPin);
+  bool allocateWireBuffer();
+  void freeWireBuffer();
 
 public:
-    TwoWire(uint8_t bus_num);
-    void begin(int sda=-1, int scl=-1, uint32_t frequency=100000);
-    void setClock(uint32_t);
-    void beginTransmission(uint8_t);
-    void beginTransmission(int);
-    uint8_t endTransmission(void);
-    uint8_t endTransmission(uint8_t);
-    size_t requestFrom(uint8_t address, size_t size, bool sendStop);
+  TwoWire(uint8_t bus_num);
+  ~TwoWire();
 
-    uint8_t requestFrom(uint8_t, uint8_t);
-    uint8_t requestFrom(uint8_t, uint8_t, uint8_t);
-    uint8_t requestFrom(int, int);
-    uint8_t requestFrom(int, int, int);
+  bool begin() override final {
+    return begin(-1, -1);
+  }
 
-    size_t write(uint8_t);
-    size_t write(const uint8_t *, size_t);
-    int available(void);
-    int read(void);
-    int peek(void);
-    void flush(void);
+  bool begin(uint8_t address) override final {
+#if SOC_I2C_SUPPORT_SLAVE
+    return begin(address, -1, -1, 0);
+#else
+    log_e("I2C slave is not supported on " CONFIG_IDF_TARGET);
+    return false;
+#endif
+  }
 
-    inline size_t write(const char * s)
-    {
-        return write((uint8_t*) s, strlen(s));
-    }
-    inline size_t write(unsigned long n)
-    {
-        return write((uint8_t)n);
-    }
-    inline size_t write(long n)
-    {
-        return write((uint8_t)n);
-    }
-    inline size_t write(unsigned int n)
-    {
-        return write((uint8_t)n);
-    }
-    inline size_t write(int n)
-    {
-        return write((uint8_t)n);
-    }
+  bool end() override;
+
+  bool setClock(uint32_t freq) override;
+
+  void beginTransmission(uint8_t address) override;
+  uint8_t endTransmission(bool stopBit) override;
+  uint8_t endTransmission() override;
+
+  size_t requestFrom(uint8_t address, size_t len, bool stopBit) override;
+  size_t requestFrom(uint8_t address, size_t len) override;
+
+  void onReceive(void (*)(int)) override;
+  void onRequest(void (*)(void)) override;
+
+  //call setPins() first, so that begin() can be called without arguments from libraries
+  bool setPins(int sda, int scl);
+
+  bool begin(int sda, int scl, uint32_t frequency = 0);  // returns true, if successful init of i2c bus
+#if SOC_I2C_SUPPORT_SLAVE
+  bool begin(uint8_t slaveAddr, int sda, int scl, uint32_t frequency);
+#endif /* SOC_I2C_SUPPORT_SLAVE */
+
+  size_t setBufferSize(size_t bSize);
+
+  void setTimeOut(uint16_t timeOutMillis);  // default timeout of i2c transactions is 50ms
+  uint16_t getTimeOut();
+
+  uint32_t getClock();
+
+  size_t write(uint8_t) override;
+  size_t write(const uint8_t *, size_t) override;
+  int available() override;
+  int read() override;
+  int peek() override;
+  void flush() override;
+
+#if SOC_I2C_SUPPORT_SLAVE
+  size_t slaveWrite(const uint8_t *, size_t);
+#endif /* SOC_I2C_SUPPORT_SLAVE */
 };
 
 extern TwoWire Wire;
+extern TwoWire Wire1;
 
-#endif
+#endif /* SOC_I2C_SUPPORTED */
+#endif /* TwoWire_h */

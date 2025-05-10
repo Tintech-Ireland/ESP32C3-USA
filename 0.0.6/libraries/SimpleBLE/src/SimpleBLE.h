@@ -15,6 +15,9 @@
 #ifndef _SIMPLE_BLE_H_
 #define _SIMPLE_BLE_H_
 
+#include "sdkconfig.h"
+
+#if defined(CONFIG_BT_ENABLED) && defined(CONFIG_BLUEDROID_ENABLED)
 
 #include <cstdint>
 #include <cstdio>
@@ -22,19 +25,18 @@
 #include <cstring>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "bt.h"
+#include "esp_bt.h"
 
 #include "Arduino.h"
 
 struct ble_gap_adv_params_s;
 
 class SimpleBLE {
-    public:
+public:
+  SimpleBLE(void);
+  ~SimpleBLE(void);
 
-        SimpleBLE(void);
-        ~SimpleBLE(void);
-
-        /**
+  /**
          * Start BLE Advertising
          *
          * @param[in] localName  local name to advertise
@@ -42,19 +44,21 @@ class SimpleBLE {
          * @return true on success
          *
          */
-        bool begin(String localName=String());
+  bool begin(String localName = String());
 
-        /**
+  /**
          * Stop BLE Advertising
          *
          * @return none
          */
-        void end(void);
+  void end(void);
 
-    private:
-        String local_name;
-    private:
+private:
+  String local_name;
 
+private:
 };
+
+#endif
 
 #endif

@@ -13,439 +13,405 @@
 // limitations under the License.
 
 #include "esp32-hal-i2c.h"
+
+#if SOC_I2C_SUPPORTED
 #include "esp32-hal.h"
+#if !CONFIG_DISABLE_HAL_LOCKS
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
-#include "rom/ets_sys.h"
-#include "soc/i2c_reg.h"
-#include "soc/i2c_struct.h"
-#include "soc/dport_reg.h"
+#endif
+#include "esp_attr.h"
+#include "esp_system.h"
+#include "soc/soc_caps.h"
+#include "soc/i2c_periph.h"
+#include "hal/i2c_hal.h"
+#include "hal/i2c_ll.h"
+#include "driver/i2c.h"
+#include "esp32-hal-periman.h"
 
-//#define I2C_DEV(i)   (volatile i2c_dev_t *)((i)?DR_REG_I2C1_EXT_BASE:DR_REG_I2C_EXT_BASE)
-//#define I2C_DEV(i)   ((i2c_dev_t *)(REG_I2C_BASE(i)))
-#define I2C_SCL_IDX(p)  ((p==0)?I2CEXT0_SCL_OUT_IDX:((p==1)?I2CEXT1_SCL_OUT_IDX:0))
-#define I2C_SDA_IDX(p) ((p==0)?I2CEXT0_SDA_OUT_IDX:((p==1)?I2CEXT1_SDA_OUT_IDX:0))
+#if SOC_I2C_SUPPORT_APB || SOC_I2C_SUPPORT_XTAL
+#include "esp_private/esp_clk.h"
+#endif
+#if SOC_I2C_SUPPORT_RTC
+#include "clk_ctrl_os.h"
+#endif
 
-#define DR_REG_I2C_EXT_BASE_FIXED               0x60013000
-#define DR_REG_I2C1_EXT_BASE_FIXED              0x60027000
-
-struct i2c_struct_t {
-    i2c_dev_t * dev;
+typedef volatile struct {
+  bool initialized;
+  uint32_t frequency;
 #if !CONFIG_DISABLE_HAL_LOCKS
-    xSemaphoreHandle lock;
+  SemaphoreHandle_t lock;
 #endif
-    uint8_t num;
-};
+  int8_t scl;
+  int8_t sda;
 
-enum {
-    I2C_CMD_RSTART,
-    I2C_CMD_WRITE,
-    I2C_CMD_READ,
-    I2C_CMD_STOP,
-    I2C_CMD_END
-};
+} i2c_bus_t;
 
-#if CONFIG_DISABLE_HAL_LOCKS
-#define I2C_MUTEX_LOCK()
-#define I2C_MUTEX_UNLOCK()
+static i2c_bus_t bus[SOC_I2C_NUM];
 
-static i2c_t _i2c_bus_array[2] = {
-    {(volatile i2c_dev_t *)(DR_REG_I2C_EXT_BASE_FIXED), 0},
-    {(volatile i2c_dev_t *)(DR_REG_I2C1_EXT_BASE_FIXED), 1}
-};
-#else
-#define I2C_MUTEX_LOCK()    do {} while (xSemaphoreTake(i2c->lock, portMAX_DELAY) != pdPASS)
-#define I2C_MUTEX_UNLOCK()  xSemaphoreGive(i2c->lock)
-
-static i2c_t _i2c_bus_array[2] = {
-    {(volatile i2c_dev_t *)(DR_REG_I2C_EXT_BASE_FIXED), NULL, 0},
-    {(volatile i2c_dev_t *)(DR_REG_I2C1_EXT_BASE_FIXED), NULL, 1}
-};
-#endif
-
-i2c_err_t i2cAttachSCL(i2c_t * i2c, int8_t scl)
-{
-    if(i2c == NULL){
-        return I2C_ERROR_DEV;
-    }
-    pinMode(scl, OUTPUT_OPEN_DRAIN | PULLUP);
-    pinMatrixOutAttach(scl, I2C_SCL_IDX(i2c->num), false, false);
-    pinMatrixInAttach(scl, I2C_SCL_IDX(i2c->num), false);
-    return I2C_ERROR_OK;
+static bool i2cDetachBus(void *bus_i2c_num) {
+  uint8_t i2c_num = (int)bus_i2c_num - 1;
+  if (!bus[i2c_num].initialized) {
+    return true;
+  }
+  esp_err_t err = i2cDeinit(i2c_num);
+  if (err != ESP_OK) {
+    log_e("i2cDeinit failed with error: %d", err);
+    return false;
+  }
+  return true;
 }
 
-i2c_err_t i2cDetachSCL(i2c_t * i2c, int8_t scl)
-{
-    if(i2c == NULL){
-        return I2C_ERROR_DEV;
-    }
-    pinMatrixOutDetach(scl, false, false);
-    pinMatrixInDetach(I2C_SCL_IDX(i2c->num), false, false);
-    pinMode(scl, INPUT);
-    return I2C_ERROR_OK;
+bool i2cIsInit(uint8_t i2c_num) {
+  if (i2c_num >= SOC_I2C_NUM) {
+    return false;
+  }
+  return bus[i2c_num].initialized;
 }
 
-i2c_err_t i2cAttachSDA(i2c_t * i2c, int8_t sda)
-{
-    if(i2c == NULL){
-        return I2C_ERROR_DEV;
-    }
-    pinMode(sda, OUTPUT_OPEN_DRAIN | PULLUP);
-    pinMatrixOutAttach(sda, I2C_SDA_IDX(i2c->num), false, false);
-    pinMatrixInAttach(sda, I2C_SDA_IDX(i2c->num), false);
-    return I2C_ERROR_OK;
-}
-
-i2c_err_t i2cDetachSDA(i2c_t * i2c, int8_t sda)
-{
-    if(i2c == NULL){
-        return I2C_ERROR_DEV;
-    }
-    pinMatrixOutDetach(sda, false, false);
-    pinMatrixInDetach(I2C_SDA_IDX(i2c->num), false, false);
-    pinMode(sda, INPUT);
-    return I2C_ERROR_OK;
-}
-
-/*
- * index     - command index (0 to 15)
- * op_code   - is the command
- * byte_num  - This register is to store the amounts of data that is read and written. byte_num in RSTART, STOP, END is null.
- * ack_val   - Each data byte is terminated by an ACK bit used to set the bit level.
- * ack_exp   - This bit is to set an expected ACK value for the transmitter.
- * ack_check - This bit is to decide whether the transmitter checks ACK bit. 1 means yes and 0 means no.
- * */
-void i2cSetCmd(i2c_t * i2c, uint8_t index, uint8_t op_code, uint8_t byte_num, bool ack_val, bool ack_exp, bool ack_check)
-{
-    i2c->dev->command[index].val = 0;
-    i2c->dev->command[index].ack_en = ack_check;
-    i2c->dev->command[index].ack_exp = ack_exp;
-    i2c->dev->command[index].ack_val = ack_val;
-    i2c->dev->command[index].byte_num = byte_num;
-    i2c->dev->command[index].op_code = op_code;
-}
-
-void i2cResetCmd(i2c_t * i2c){
-    int i;
-    for(i=0;i<16;i++){
-        i2c->dev->command[i].val = 0;
-    }
-}
-
-void i2cResetFiFo(i2c_t * i2c)
-{
-    i2c->dev->fifo_conf.tx_fifo_rst = 1;
-    i2c->dev->fifo_conf.tx_fifo_rst = 0;
-    i2c->dev->fifo_conf.rx_fifo_rst = 1;
-    i2c->dev->fifo_conf.rx_fifo_rst = 0;
-}
-
-i2c_err_t i2cWrite(i2c_t * i2c, uint16_t address, bool addr_10bit, uint8_t * data, uint8_t len, bool sendStop)
-{
-    int i;
-    uint8_t index = 0;
-    uint8_t dataLen = len + (addr_10bit?2:1);
-    address = (address << 1);
-
-    if(i2c == NULL){
-        return I2C_ERROR_DEV;
-    }
-
-    I2C_MUTEX_LOCK();
-
-    while(dataLen) {
-        uint8_t willSend = (dataLen > 32)?32:dataLen;
-        uint8_t dataSend = willSend;
-
-        i2cResetFiFo(i2c);
-        i2cResetCmd(i2c);
-        //Clear Interrupts
-        i2c->dev->int_clr.val = 0xFFFFFFFF;
-
-        //CMD START
-        i2cSetCmd(i2c, 0, I2C_CMD_RSTART, 0, false, false, false);
-
-        //CMD WRITE(ADDRESS + DATA)
-        if(!index) {
-            i2c->dev->fifo_data.data = address & 0xFF;
-            dataSend--;
-            if(addr_10bit) {
-                i2c->dev->fifo_data.data = (address >> 8) & 0xFF;
-                dataSend--;
-            }
-        }
-        i = 0;
-        while(i<dataSend) {
-            i++;
-            i2c->dev->fifo_data.val = data[index++];
-            while(i2c->dev->status_reg.tx_fifo_cnt < i);
-        }
-        i2cSetCmd(i2c, 1, I2C_CMD_WRITE, willSend, false, false, true);
-        dataLen -= willSend;
-
-        //CMD STOP or CMD END if there is more data
-        if(dataLen || !sendStop) {
-            i2cSetCmd(i2c, 2, I2C_CMD_END, 0, false, false, false);
-        } else if(sendStop) {
-            i2cSetCmd(i2c, 2, I2C_CMD_STOP, 0, false, false, false);
-        }
-
-        //START Transmission
-        i2c->dev->ctr.trans_start = 1;
-
-        //WAIT Transmission
-        uint32_t startAt = millis();
-        while(1) {
-            //have been looping for too long
-            if((millis() - startAt)>50){
-                //log_e("Timeout! Addr: %x", address >> 1);
-                I2C_MUTEX_UNLOCK();
-                return I2C_ERROR_BUS;
-            }
-
-            //Bus failed (maybe check for this while waiting?
-            if(i2c->dev->int_raw.arbitration_lost) {
-                //log_e("Bus Fail! Addr: %x", address >> 1);
-                I2C_MUTEX_UNLOCK();
-                return I2C_ERROR_BUS;
-            }
-
-            //Bus timeout
-            if(i2c->dev->int_raw.time_out) {
-                //log_e("Bus Timeout! Addr: %x", address >> 1);
-                I2C_MUTEX_UNLOCK();
-                return I2C_ERROR_TIMEOUT;
-            }
-
-            //Transmission did not finish and ACK_ERR is set
-            if(i2c->dev->int_raw.ack_err) {
-                //log_w("Ack Error! Addr: %x", address >> 1);
-                while(i2c->dev->status_reg.bus_busy);
-                I2C_MUTEX_UNLOCK();
-                return I2C_ERROR_ACK;
-            }
-
-            if((sendStop && i2c->dev->command[2].done) || !i2c->dev->status_reg.bus_busy){
-                break;
-            }
-        }
-
-    }
-    I2C_MUTEX_UNLOCK();
-    return I2C_ERROR_OK;
-}
-
-i2c_err_t i2cRead(i2c_t * i2c, uint16_t address, bool addr_10bit, uint8_t * data, uint8_t len, bool sendStop)
-{
-    address = (address << 1) | 1;
-    uint8_t addrLen = (addr_10bit?2:1);
-    uint8_t index = 0;
-    uint8_t cmdIdx;
-    uint8_t willRead;
-
-    if(i2c == NULL){
-        return I2C_ERROR_DEV;
-    }
-
-    I2C_MUTEX_LOCK();
-
-    i2cResetFiFo(i2c);
-    i2cResetCmd(i2c);
-
-    //CMD START
-    i2cSetCmd(i2c, 0, I2C_CMD_RSTART, 0, false, false, false);
-
-    //CMD WRITE ADDRESS
-    i2c->dev->fifo_data.val = address & 0xFF;
-    if(addr_10bit) {
-        i2c->dev->fifo_data.val = (address >> 8) & 0xFF;
-    }
-    i2cSetCmd(i2c, 1, I2C_CMD_WRITE, addrLen, false, false, true);
-
-    while(len) {
-        cmdIdx = (index)?0:2;
-        willRead = (len > 32)?32:(len-1);
-        if(cmdIdx){
-            i2cResetFiFo(i2c);
-        }
-
-        if(willRead){
-            i2cSetCmd(i2c, cmdIdx++, I2C_CMD_READ, willRead, false, false, false);
-        }
-
-        if((len - willRead) > 1) {
-            i2cSetCmd(i2c, cmdIdx++, I2C_CMD_END, 0, false, false, false);
-        } else {
-            willRead++;
-            i2cSetCmd(i2c, cmdIdx++, I2C_CMD_READ, 1, true, false, false);
-            if(sendStop) {
-                i2cSetCmd(i2c, cmdIdx++, I2C_CMD_STOP, 0, false, false, false);
-            }
-        }
-
-        //Clear Interrupts
-        i2c->dev->int_clr.val = 0xFFFFFFFF;
-
-        //START Transmission
-        i2c->dev->ctr.trans_start = 1;
-
-        //WAIT Transmission
-        uint32_t startAt = millis();
-        while(1) {
-            //have been looping for too long
-            if((millis() - startAt)>50){
-                //log_e("Timeout! Addr: %x", address >> 1);
-                I2C_MUTEX_UNLOCK();
-                return I2C_ERROR_BUS;
-            }
-
-            //Bus failed (maybe check for this while waiting?
-            if(i2c->dev->int_raw.arbitration_lost) {
-                //log_e("Bus Fail! Addr: %x", address >> 1);
-                I2C_MUTEX_UNLOCK();
-                return I2C_ERROR_BUS;
-            }
-
-            //Bus timeout
-            if(i2c->dev->int_raw.time_out) {
-                //log_e("Bus Timeout! Addr: %x", address >> 1);
-                I2C_MUTEX_UNLOCK();
-                return I2C_ERROR_TIMEOUT;
-            }
-
-            //Transmission did not finish and ACK_ERR is set
-            if(i2c->dev->int_raw.ack_err) {
-                //log_w("Ack Error! Addr: %x", address >> 1);
-                I2C_MUTEX_UNLOCK();
-                return I2C_ERROR_ACK;
-            }
-
-            if(i2c->dev->command[cmdIdx-1].done) {
-                break;
-            }
-        }
-
-        int i = 0;
-        while(i<willRead) {
-            i++;
-            data[index++] = i2c->dev->fifo_data.val & 0xFF;
-        }
-        len -= willRead;
-    }
-    I2C_MUTEX_UNLOCK();
-    return I2C_ERROR_OK;
-}
-
-i2c_err_t i2cSetFrequency(i2c_t * i2c, uint32_t clk_speed)
-{
-    if(i2c == NULL){
-        return I2C_ERROR_DEV;
-    }
-
-    uint32_t period = (APB_CLK_FREQ/clk_speed) / 2;
-    uint32_t halfPeriod = period/2;
-    uint32_t quarterPeriod = period/4;
-
-    I2C_MUTEX_LOCK();
-    //the clock num during SCL is low level
-    i2c->dev->scl_low_period.period = period;
-    //the clock num during SCL is high level
-    i2c->dev->scl_high_period.period = period;
-
-    //the clock num between the negedge of SDA and negedge of SCL for start mark
-    i2c->dev->scl_start_hold.time = halfPeriod;
-    //the clock num between the posedge of SCL and the negedge of SDA for restart mark
-    i2c->dev->scl_rstart_setup.time = halfPeriod;
-
-    //the clock num after the STOP bit's posedge
-    i2c->dev->scl_stop_hold.time = halfPeriod;
-    //the clock num between the posedge of SCL and the posedge of SDA
-    i2c->dev->scl_stop_setup.time = halfPeriod;
-
-    //the clock num I2C used to hold the data after the negedge of SCL.
-    i2c->dev->sda_hold.time = quarterPeriod;
-    //the clock num I2C used to sample data on SDA after the posedge of SCL
-    i2c->dev->sda_sample.time = quarterPeriod;
-    I2C_MUTEX_UNLOCK();
-    return I2C_ERROR_OK;
-}
-
-uint32_t i2cGetFrequency(i2c_t * i2c)
-{
-    if(i2c == NULL){
-        return 0;
-    }
-
-    return APB_CLK_FREQ/(i2c->dev->scl_low_period.period+i2c->dev->scl_high_period.period);
-}
-
-/*
- * mode          - 0 = Slave, 1 = Master
- * slave_addr    - I2C Address
- * addr_10bit_en - enable slave 10bit address mode.
- * */
-
-i2c_t * i2cInit(uint8_t i2c_num, uint16_t slave_addr, bool addr_10bit_en)
-{
-    if(i2c_num > 1){
-        return NULL;
-    }
-
-    i2c_t * i2c = &_i2c_bus_array[i2c_num];
-
+esp_err_t i2cInit(uint8_t i2c_num, int8_t sda, int8_t scl, uint32_t frequency) {
+  esp_err_t ret = ESP_OK;
+  if (i2c_num >= SOC_I2C_NUM) {
+    return ESP_ERR_INVALID_ARG;
+  }
 #if !CONFIG_DISABLE_HAL_LOCKS
-    if(i2c->lock == NULL){
-        i2c->lock = xSemaphoreCreateMutex();
-        if(i2c->lock == NULL) {
-            return NULL;
-        }
+  if (bus[i2c_num].lock == NULL) {
+    bus[i2c_num].lock = xSemaphoreCreateMutex();
+    if (bus[i2c_num].lock == NULL) {
+      log_e("xSemaphoreCreateMutex failed");
+      return ESP_ERR_NO_MEM;
     }
+  }
+  //acquire lock
+  if (xSemaphoreTake(bus[i2c_num].lock, portMAX_DELAY) != pdTRUE) {
+    log_e("could not acquire lock");
+    return ESP_FAIL;
+  }
 #endif
+  if (bus[i2c_num].initialized) {
+    log_e("bus is already initialized");
+    ret = ESP_FAIL;
+    goto init_fail;
+  }
 
-    if(i2c_num == 0) {
-        DPORT_SET_PERI_REG_MASK(DPORT_PERIP_CLK_EN_REG,DPORT_I2C_EXT0_CLK_EN);
-        DPORT_CLEAR_PERI_REG_MASK(DPORT_PERIP_RST_EN_REG,DPORT_I2C_EXT0_RST);
+  if (!frequency) {
+    frequency = 100000UL;
+  } else if (frequency > 1000000UL) {
+    frequency = 1000000UL;
+  }
+
+  perimanSetBusDeinit(ESP32_BUS_TYPE_I2C_MASTER_SDA, i2cDetachBus);
+  perimanSetBusDeinit(ESP32_BUS_TYPE_I2C_MASTER_SCL, i2cDetachBus);
+
+  if (!perimanClearPinBus(sda) || !perimanClearPinBus(scl)) {
+    ret = ESP_FAIL;
+    goto init_fail;
+  }
+
+  log_i("Initializing I2C Master: sda=%d scl=%d freq=%d", sda, scl, frequency);
+
+  i2c_config_t conf = {};
+  conf.mode = I2C_MODE_MASTER;
+  conf.scl_io_num = (gpio_num_t)scl;
+  conf.sda_io_num = (gpio_num_t)sda;
+  conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
+  conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
+  conf.master.clk_speed = frequency;
+  conf.clk_flags = I2C_SCLK_SRC_FLAG_FOR_NOMAL;  //Any one clock source that is available for the specified frequency may be chosen
+
+  ret = i2c_param_config((i2c_port_t)i2c_num, &conf);
+  if (ret != ESP_OK) {
+    log_e("i2c_param_config failed");
+  } else {
+    ret = i2c_driver_install((i2c_port_t)i2c_num, conf.mode, 0, 0, 0);
+    if (ret != ESP_OK) {
+      log_e("i2c_driver_install failed");
     } else {
-        DPORT_SET_PERI_REG_MASK(DPORT_PERIP_CLK_EN_REG,DPORT_I2C_EXT1_CLK_EN);
-        DPORT_CLEAR_PERI_REG_MASK(DPORT_PERIP_RST_EN_REG,DPORT_I2C_EXT1_RST);
+      bus[i2c_num].initialized = true;
+      bus[i2c_num].frequency = frequency;
+      bus[i2c_num].scl = scl;
+      bus[i2c_num].sda = sda;
+      //Clock Stretching Timeout: 20b:esp32, 5b:esp32-c3, 24b:esp32-s2
+      i2c_set_timeout((i2c_port_t)i2c_num, I2C_LL_MAX_TIMEOUT);
+      if (!perimanSetPinBus(sda, ESP32_BUS_TYPE_I2C_MASTER_SDA, (void *)(i2c_num + 1), i2c_num, -1)
+          || !perimanSetPinBus(scl, ESP32_BUS_TYPE_I2C_MASTER_SCL, (void *)(i2c_num + 1), i2c_num, -1)) {
+#if !CONFIG_DISABLE_HAL_LOCKS
+        //release lock so that i2cDetachBus can execute i2cDeinit
+        xSemaphoreGive(bus[i2c_num].lock);
+#endif
+        i2cDetachBus((void *)(i2c_num + 1));
+        return ESP_FAIL;
+      }
     }
-    
-    I2C_MUTEX_LOCK();
-    i2c->dev->ctr.val = 0;
-    i2c->dev->ctr.ms_mode = (slave_addr == 0);
-    i2c->dev->ctr.sda_force_out = 1 ;
-    i2c->dev->ctr.scl_force_out = 1 ;
-    i2c->dev->ctr.clk_en = 1;
-
-    //the max clock number of receiving  a data
-    i2c->dev->timeout.tout = 400000;//clocks max=1048575
-    //disable apb nonfifo access
-    i2c->dev->fifo_conf.nonfifo_en = 0;
-
-    i2c->dev->slave_addr.val = 0;
-    if (slave_addr) {
-        i2c->dev->slave_addr.addr = slave_addr;
-        i2c->dev->slave_addr.en_10bit = addr_10bit_en;
-    }
-    I2C_MUTEX_UNLOCK();
-
-    return i2c;
+  }
+init_fail:
+#if !CONFIG_DISABLE_HAL_LOCKS
+  //release lock
+  xSemaphoreGive(bus[i2c_num].lock);
+#endif
+  return ret;
 }
 
-void i2cInitFix(i2c_t * i2c){
-    if(i2c == NULL){
-        return;
+esp_err_t i2cDeinit(uint8_t i2c_num) {
+  esp_err_t err = ESP_FAIL;
+  if (i2c_num >= SOC_I2C_NUM) {
+    return ESP_ERR_INVALID_ARG;
+  }
+#if !CONFIG_DISABLE_HAL_LOCKS
+  //acquire lock
+  if (bus[i2c_num].lock == NULL || xSemaphoreTake(bus[i2c_num].lock, portMAX_DELAY) != pdTRUE) {
+    log_e("could not acquire lock");
+    return err;
+  }
+#endif
+  if (!bus[i2c_num].initialized) {
+    log_e("bus is not initialized");
+  } else {
+    err = i2c_driver_delete((i2c_port_t)i2c_num);
+    if (err == ESP_OK) {
+      bus[i2c_num].initialized = false;
+      perimanClearPinBus(bus[i2c_num].scl);
+      perimanClearPinBus(bus[i2c_num].sda);
+      bus[i2c_num].scl = -1;
+      bus[i2c_num].sda = -1;
     }
-    I2C_MUTEX_LOCK();
-    i2cResetFiFo(i2c);
-    i2cResetCmd(i2c);
-    i2c->dev->int_clr.val = 0xFFFFFFFF;
-    i2cSetCmd(i2c, 0, I2C_CMD_RSTART, 0, false, false, false);
-    i2c->dev->fifo_data.data = 0;
-    i2cSetCmd(i2c, 1, I2C_CMD_WRITE, 1, false, false, false);
-    i2cSetCmd(i2c, 2, I2C_CMD_STOP, 0, false, false, false);
-    i2c->dev->ctr.trans_start = 1;
-    while(!i2c->dev->command[2].done);
-    I2C_MUTEX_UNLOCK();
+  }
+#if !CONFIG_DISABLE_HAL_LOCKS
+  //release lock
+  xSemaphoreGive(bus[i2c_num].lock);
+#endif
+  return err;
 }
+
+esp_err_t i2cWrite(uint8_t i2c_num, uint16_t address, const uint8_t *buff, size_t size, uint32_t timeOutMillis) {
+  esp_err_t ret = ESP_FAIL;
+  i2c_cmd_handle_t cmd = NULL;
+  if (i2c_num >= SOC_I2C_NUM) {
+    return ESP_ERR_INVALID_ARG;
+  }
+#if !CONFIG_DISABLE_HAL_LOCKS
+  //acquire lock
+  if (bus[i2c_num].lock == NULL || xSemaphoreTake(bus[i2c_num].lock, portMAX_DELAY) != pdTRUE) {
+    log_e("could not acquire lock");
+    return ret;
+  }
+#endif
+  if (!bus[i2c_num].initialized) {
+    log_e("bus is not initialized");
+    goto end;
+  }
+
+  //short implementation does not support zero size writes (example when scanning) PR in IDF?
+  //ret =  i2c_master_write_to_device((i2c_port_t)i2c_num, address, buff, size, timeOutMillis / portTICK_PERIOD_MS);
+
+  ret = ESP_OK;
+  uint8_t cmd_buff[I2C_LINK_RECOMMENDED_SIZE(1)] = {0};
+  cmd = i2c_cmd_link_create_static(cmd_buff, I2C_LINK_RECOMMENDED_SIZE(1));
+  ret = i2c_master_start(cmd);
+  if (ret != ESP_OK) {
+    goto end;
+  }
+  ret = i2c_master_write_byte(cmd, (address << 1) | I2C_MASTER_WRITE, true);
+  if (ret != ESP_OK) {
+    goto end;
+  }
+  if (size) {
+    ret = i2c_master_write(cmd, buff, size, true);
+    if (ret != ESP_OK) {
+      goto end;
+    }
+  }
+  ret = i2c_master_stop(cmd);
+  if (ret != ESP_OK) {
+    goto end;
+  }
+  ret = i2c_master_cmd_begin((i2c_port_t)i2c_num, cmd, timeOutMillis / portTICK_PERIOD_MS);
+
+end:
+  if (cmd != NULL) {
+    i2c_cmd_link_delete_static(cmd);
+  }
+#if !CONFIG_DISABLE_HAL_LOCKS
+  //release lock
+  xSemaphoreGive(bus[i2c_num].lock);
+#endif
+  return ret;
+}
+
+esp_err_t i2cRead(uint8_t i2c_num, uint16_t address, uint8_t *buff, size_t size, uint32_t timeOutMillis, size_t *readCount) {
+  esp_err_t ret = ESP_FAIL;
+  if (i2c_num >= SOC_I2C_NUM) {
+    return ESP_ERR_INVALID_ARG;
+  }
+#if !CONFIG_DISABLE_HAL_LOCKS
+  //acquire lock
+  if (bus[i2c_num].lock == NULL || xSemaphoreTake(bus[i2c_num].lock, portMAX_DELAY) != pdTRUE) {
+    log_e("could not acquire lock");
+    return ret;
+  }
+#endif
+  if (!bus[i2c_num].initialized) {
+    log_e("bus is not initialized");
+  } else {
+    ret = i2c_master_read_from_device((i2c_port_t)i2c_num, address, buff, size, timeOutMillis / portTICK_PERIOD_MS);
+    if (ret == ESP_OK) {
+      *readCount = size;
+    } else {
+      *readCount = 0;
+    }
+  }
+#if !CONFIG_DISABLE_HAL_LOCKS
+  //release lock
+  xSemaphoreGive(bus[i2c_num].lock);
+#endif
+  return ret;
+}
+
+esp_err_t i2cWriteReadNonStop(
+  uint8_t i2c_num, uint16_t address, const uint8_t *wbuff, size_t wsize, uint8_t *rbuff, size_t rsize, uint32_t timeOutMillis, size_t *readCount
+) {
+  esp_err_t ret = ESP_FAIL;
+  if (i2c_num >= SOC_I2C_NUM) {
+    return ESP_ERR_INVALID_ARG;
+  }
+#if !CONFIG_DISABLE_HAL_LOCKS
+  //acquire lock
+  if (bus[i2c_num].lock == NULL || xSemaphoreTake(bus[i2c_num].lock, portMAX_DELAY) != pdTRUE) {
+    log_e("could not acquire lock");
+    return ret;
+  }
+#endif
+  if (!bus[i2c_num].initialized) {
+    log_e("bus is not initialized");
+  } else {
+    ret = i2c_master_write_read_device((i2c_port_t)i2c_num, address, wbuff, wsize, rbuff, rsize, timeOutMillis / portTICK_PERIOD_MS);
+    if (ret == ESP_OK) {
+      *readCount = rsize;
+    } else {
+      *readCount = 0;
+    }
+  }
+#if !CONFIG_DISABLE_HAL_LOCKS
+  //release lock
+  xSemaphoreGive(bus[i2c_num].lock);
+#endif
+  return ret;
+}
+
+esp_err_t i2cSetClock(uint8_t i2c_num, uint32_t frequency) {
+  esp_err_t ret = ESP_FAIL;
+  if (i2c_num >= SOC_I2C_NUM) {
+    return ESP_ERR_INVALID_ARG;
+  }
+#if !CONFIG_DISABLE_HAL_LOCKS
+  //acquire lock
+  if (bus[i2c_num].lock == NULL || xSemaphoreTake(bus[i2c_num].lock, portMAX_DELAY) != pdTRUE) {
+    log_e("could not acquire lock");
+    return ret;
+  }
+#endif
+  if (!bus[i2c_num].initialized) {
+    log_e("bus is not initialized");
+    goto end;
+  }
+  if (bus[i2c_num].frequency == frequency) {
+    ret = ESP_OK;
+    goto end;
+  }
+  if (!frequency) {
+    frequency = 100000UL;
+  } else if (frequency > 1000000UL) {
+    frequency = 1000000UL;
+  }
+
+  typedef struct {
+    soc_module_clk_t clk; /*!< I2C source clock */
+    uint32_t clk_freq;    /*!< I2C source clock frequency */
+  } i2c_clk_alloc_t;
+
+  typedef enum {
+    I2C_SCLK_DEFAULT = 0, /*!< I2C source clock not selected*/
+#if SOC_I2C_SUPPORT_APB
+    I2C_SCLK_APB, /*!< I2C source clock from APB, 80M*/
+#endif
+#if SOC_I2C_SUPPORT_XTAL
+    I2C_SCLK_XTAL, /*!< I2C source clock from XTAL, 40M */
+#endif
+#if SOC_I2C_SUPPORT_RTC
+    I2C_SCLK_RTC, /*!< I2C source clock from 8M RTC, 8M */
+#endif
+#if SOC_I2C_SUPPORT_REF_TICK
+    I2C_SCLK_REF_TICK, /*!< I2C source clock from REF_TICK, 1M */
+#endif
+    I2C_SCLK_MAX,
+  } i2c_sclk_t;
+
+  // i2c clock characteristic, The order is the same as i2c_sclk_t.
+  i2c_clk_alloc_t i2c_clk_alloc[I2C_SCLK_MAX] = {
+    {0, 0},
+#if SOC_I2C_SUPPORT_APB
+    {SOC_MOD_CLK_APB, esp_clk_apb_freq()}, /*!< I2C APB clock characteristic*/
+#endif
+#if SOC_I2C_SUPPORT_XTAL
+    {SOC_MOD_CLK_XTAL, esp_clk_xtal_freq()}, /*!< I2C XTAL characteristic*/
+#endif
+#if SOC_I2C_SUPPORT_RTC
+    {SOC_MOD_CLK_RC_FAST, periph_rtc_dig_clk8m_get_freq()}, /*!< I2C 20M RTC characteristic*/
+#endif
+#if SOC_I2C_SUPPORT_REF_TICK
+    {SOC_MOD_CLK_REF_TICK, REF_CLK_FREQ}, /*!< I2C REF_TICK characteristic*/
+#endif
+  };
+
+  i2c_sclk_t src_clk = I2C_SCLK_DEFAULT;
+  ret = ESP_OK;
+  for (i2c_sclk_t clk = I2C_SCLK_DEFAULT + 1; clk < I2C_SCLK_MAX; clk++) {
+#if CONFIG_IDF_TARGET_ESP32S3
+    if (clk == I2C_SCLK_RTC) {  // RTC clock for s3 is inaccessible now.
+      continue;
+    }
+#endif
+    if (frequency <= i2c_clk_alloc[clk].clk_freq) {
+      src_clk = clk;
+      break;
+    }
+  }
+  if (src_clk == I2C_SCLK_DEFAULT || src_clk == I2C_SCLK_MAX) {
+    log_e("clock source could not be selected");
+    ret = ESP_FAIL;
+  } else {
+    i2c_hal_context_t hal;
+    hal.dev = I2C_LL_GET_HW(i2c_num);
+#if SOC_I2C_SUPPORT_RTC
+    if (src_clk == I2C_SCLK_RTC) {
+      periph_rtc_dig_clk8m_enable();
+    }
+#endif
+    i2c_hal_set_bus_timing(&(hal), frequency, i2c_clk_alloc[src_clk].clk, i2c_clk_alloc[src_clk].clk_freq);
+    bus[i2c_num].frequency = frequency;
+    //Clock Stretching Timeout: 20b:esp32, 5b:esp32-c3, 24b:esp32-s2
+    i2c_set_timeout((i2c_port_t)i2c_num, I2C_LL_MAX_TIMEOUT);
+  }
+
+end:
+#if !CONFIG_DISABLE_HAL_LOCKS
+  //release lock
+  xSemaphoreGive(bus[i2c_num].lock);
+#endif
+  return ret;
+}
+
+esp_err_t i2cGetClock(uint8_t i2c_num, uint32_t *frequency) {
+  if (i2c_num >= SOC_I2C_NUM) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (!bus[i2c_num].initialized) {
+    log_e("bus is not initialized");
+    return ESP_FAIL;
+  }
+  *frequency = bus[i2c_num].frequency;
+  return ESP_OK;
+}
+
+#endif /* SOC_I2C_SUPPORTED */

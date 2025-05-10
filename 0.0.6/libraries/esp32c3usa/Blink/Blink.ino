@@ -21,16 +21,14 @@ void setup() {
                                     // it for something else
   delay(1000);
 
-  esp_log_level_set("*", ESP_LOG_ERROR);  
-
-  // Build settings have NO effect on these
+   // Build settings have NO effect on these
   log_e("log_e %s", "a string error");
   log_w("log_w %s", "a string warning");
   log_i("log_i %s", "a string info");
   log_d("log_d %s", "a string debug");
   
   SerialPort.println("Start Serial");
-  ESP_LOGI("blink", "Start Log blink");
+ 
   USBSerial.println("Start USB");
 
   // initialize digital pin LED_BUILTIN as an output.
@@ -46,5 +44,4 @@ void loop() {
   SerialPort.println("Blinks serial");
   USBSerial.println("Blinks USB");
   log_d("log_d %s", "Loop string debug");
-  ESP_LOGI("blink", "Loop Log blink");
 }

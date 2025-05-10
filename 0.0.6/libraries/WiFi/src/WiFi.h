@@ -1,5 +1,5 @@
 /*
- ESP8266WiFi.h - esp8266 Wifi support.
+ WiFi.h - esp32 Wifi support.
  Based on WiFi.h from Arduino WiFi shield library.
  Copyright (c) 2011-2014 Arduino.  All right reserved.
  Modified by Ivan Grokhotkov, December 2014
@@ -19,14 +19,15 @@
  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-#ifndef WiFi_h
-#define WiFi_h
+#pragma once
+
+#include "soc/soc_caps.h"
+#if SOC_WIFI_SUPPORTED
 
 #include <stdint.h>
 
 #include "Print.h"
 #include "IPAddress.h"
-#include "IPv6Address.h"
 
 #include "WiFiType.h"
 #include "WiFiSTA.h"
@@ -38,30 +39,38 @@
 #include "WiFiServer.h"
 #include "WiFiUdp.h"
 
-class WiFiClass : public WiFiGenericClass, public WiFiSTAClass, public WiFiScanClass, public WiFiAPClass
-{
-public:
-    using WiFiGenericClass::channel;
-
-    using WiFiSTAClass::SSID;
-    using WiFiSTAClass::RSSI;
-    using WiFiSTAClass::BSSID;
-    using WiFiSTAClass::BSSIDstr;
-
-    using WiFiScanClass::SSID;
-    using WiFiScanClass::encryptionType;
-    using WiFiScanClass::RSSI;
-    using WiFiScanClass::BSSID;
-    using WiFiScanClass::BSSIDstr;
-    using WiFiScanClass::channel;
+class WiFiClass : public WiFiGenericClass, public WiFiSTAClass, public WiFiScanClass, public WiFiAPClass {
+private:
+  bool prov_enable;
 
 public:
-    void printDiag(Print& dest);
-    friend class WiFiClient;
-    friend class WiFiServer;
-    friend class WiFiUDP;
+  WiFiClass() {
+    prov_enable = false;
+  }
+
+  using WiFiGenericClass::channel;
+
+  using WiFiSTAClass::BSSID;
+  using WiFiSTAClass::BSSIDstr;
+  using WiFiSTAClass::RSSI;
+  using WiFiSTAClass::SSID;
+
+  using WiFiScanClass::BSSID;
+  using WiFiScanClass::BSSIDstr;
+  using WiFiScanClass::channel;
+  using WiFiScanClass::encryptionType;
+  using WiFiScanClass::RSSI;
+  using WiFiScanClass::SSID;
+
+public:
+  void printDiag(Print &dest);
+  friend class NetworkClient;
+  friend class NetworkServer;
+  friend class NetworkUDP;
+  void enableProv(bool status);
+  bool isProvEnabled();
 };
 
 extern WiFiClass WiFi;
 
-#endif
+#endif /* SOC_WIFI_SUPPORTED */

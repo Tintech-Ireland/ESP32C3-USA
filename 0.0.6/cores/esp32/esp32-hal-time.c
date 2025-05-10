@@ -13,70 +13,80 @@
 // limitations under the License.
 
 #include "esp32-hal.h"
-#include "apps/sntp/sntp.h"
+#include "lwip/apps/sntp.h"
+//#include "tcpip_adapter.h"
+#include "esp_netif.h"
 
-static void setTimeZone(long offset, int daylight)
-{
-    char cst[16] = {0};
-    char cdt[16] = "CDT";
-    char tz[32] = {0};
+static void setTimeZone(long offset, int daylight) {
+  char cst[17] = {0};
+  char cdt[17] = "DST";
+  char tz[33] = {0};
 
-    if(offset % 3600){
-        sprintf(cst, "CST%ld:%02u:%02u", offset / 3600, abs((offset % 3600) / 60), abs(offset % 60));
+  if (offset % 3600) {
+    sprintf(cst, "UTC%ld:%02u:%02u", offset / 3600, abs((offset % 3600) / 60), abs(offset % 60));
+  } else {
+    sprintf(cst, "UTC%ld", offset / 3600);
+  }
+  if (daylight != 3600) {
+    long tz_dst = offset - daylight;
+    if (tz_dst % 3600) {
+      sprintf(cdt, "DST%ld:%02u:%02u", tz_dst / 3600, abs((tz_dst % 3600) / 60), abs(tz_dst % 60));
     } else {
-        sprintf(cst, "CST%ld", offset / 3600);
+      sprintf(cdt, "DST%ld", tz_dst / 3600);
     }
-    if(daylight != 3600){
-        long tz_dst = offset - daylight;
-        if(tz_dst % 3600){
-            sprintf(cdt, "CDT%ld:%02u:%02u", tz_dst / 3600, abs((tz_dst % 3600) / 60), abs(tz_dst % 60));
-        } else {
-            sprintf(cdt, "CDT%ld", tz_dst / 3600);
-        }
-    }
-    sprintf(tz, "%s%s", cst, cdt);
-    setenv("TZ", tz, 1);
-    tzset();
+  }
+  sprintf(tz, "%s%s", cst, cdt);
+  setenv("TZ", tz, 1);
+  tzset();
 }
 
 /*
  * configTime
  * Source: https://github.com/esp8266/Arduino/blob/master/cores/esp8266/time.c
  * */
-void configTime(long gmtOffset_sec, int daylightOffset_sec, const char* server1, const char* server2, const char* server3)
-{
-
-    if(sntp_enabled()){
-        sntp_stop();
-    }
-    sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    sntp_setservername(0, (char*)server1);
-    sntp_setservername(1, (char*)server2);
-    sntp_setservername(2, (char*)server3);
-    sntp_init();
-    setTimeZone(gmtOffset_sec, daylightOffset_sec);
+void configTime(long gmtOffset_sec, int daylightOffset_sec, const char *server1, const char *server2, const char *server3) {
+  //tcpip_adapter_init();  // Should not hurt anything if already inited
+  esp_netif_init();
+  if (sntp_enabled()) {
+    sntp_stop();
+  }
+  sntp_setoperatingmode(SNTP_OPMODE_POLL);
+  sntp_setservername(0, (char *)server1);
+  sntp_setservername(1, (char *)server2);
+  sntp_setservername(2, (char *)server3);
+  sntp_init();
+  setTimeZone(-gmtOffset_sec, daylightOffset_sec);
 }
 
-bool getLocalTime(struct tm * info, uint32_t ms)
-{
-    uint32_t count = ms / 10;
-    time_t now;
+/*
+ * configTzTime
+ * sntp setup using TZ environment variable
+ * */
+void configTzTime(const char *tz, const char *server1, const char *server2, const char *server3) {
+  //tcpip_adapter_init();  // Should not hurt anything if already inited
+  esp_netif_init();
+  if (sntp_enabled()) {
+    sntp_stop();
+  }
+  sntp_setoperatingmode(SNTP_OPMODE_POLL);
+  sntp_setservername(0, (char *)server1);
+  sntp_setservername(1, (char *)server2);
+  sntp_setservername(2, (char *)server3);
+  sntp_init();
+  setenv("TZ", tz, 1);
+  tzset();
+}
 
+bool getLocalTime(struct tm *info, uint32_t ms) {
+  uint32_t start = millis();
+  time_t now;
+  while ((millis() - start) <= ms) {
     time(&now);
     localtime_r(&now, info);
-
-    if(info->tm_year > (2016 - 1900)){
-        return true;
+    if (info->tm_year > (2016 - 1900)) {
+      return true;
     }
-
-    while(count--) {
-        delay(10);
-        time(&now);
-        localtime_r(&now, info);
-        if(info->tm_year > (2016 - 1900)){
-            return true;
-        }
-    }
-    return false;
+    delay(10);
+  }
+  return false;
 }
-
