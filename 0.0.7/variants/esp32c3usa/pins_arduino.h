@@ -42,8 +42,10 @@
 // LED
 #define LED_BUILTIN 10
 
-#define RGB_BUILTIN    LED_BUILTIN
-#define RGB_BRIGHTNESS 64
+// #define RGB_BUILTIN    LED_BUILTIN
+// #define RGB_BRIGHTNESS 0
+#undef RGB_BRIGHTNESS
+#define RGB_BRIGHTNESS 0
 
 // Not used features
 #define TOUCH_PIN  -1

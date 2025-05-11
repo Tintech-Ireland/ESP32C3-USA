@@ -42,6 +42,6 @@ void loop() {
   digitalWrite(10, LOW);   // turn the LED off by making the voltage LOW
   delay(2000);                      // wait for a second
   SerialPort.println("Blinks serial");
-  USBSerial.println("Blinks USB");
+  USBSerial.printf("Blinks USB %d\r\n", RGB_BRIGHTNESS);
   log_d("log_d %s", "Loop string debug");
 }
