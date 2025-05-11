@@ -1,16 +1,16 @@
 {
   "packages": [
     {
-      "maintainer": "DFRobot DFRDuino", 
+      "maintainer": "Pawad Imhotep", 
       "help": {
         "online": "http://esp32.com"
       }, 
-      "websiteURL": "https://github.com/espressif/arduino-esp32", 
+      "websiteURL": "https://github.com/Tintech-Ireland/ESP32C3-USA", 
       "platforms": [
 		{
           "category": "ESP32", 
           "help": {
-            "online": ""
+            "online": "https://github.com/Tintech-Ireland/ESP32C3-USA"
           }, 
           "url": "https://github.com/Tintech-Ireland/ESP32C3-USA/raw/refs/heads/main/releases/esp32c3usa-0.0.6.zip", 
           "checksum": "SHA-256:a6280f8f9773becad0bdefca1c32021aacd5511a4e856b3116fa8aef415dec5f",
@@ -69,7 +69,7 @@
           ]
         }
       ], 
-      "email": "hristo@espressif.com", 
+      "email": "info@tintech.ie", 
       "name": "esp32"
     }
   ]
