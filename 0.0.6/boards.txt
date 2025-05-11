@@ -1,34 +1,34 @@
 # Official Espressif options
 menu.UploadSpeed=Upload Speed
-menu.USBMode=USB Mode
+# menu.USBMode=USB Mode
 menu.CDCOnBoot=USB CDC On Boot
-menu.MSCOnBoot=USB Firmware MSC On Boot
-menu.DFUOnBoot=USB DFU On Boot
-menu.UploadMode=Upload Mode
+# menu.MSCOnBoot=USB Firmware MSC On Boot
+# menu.DFUOnBoot=USB DFU On Boot
+# menu.UploadMode=Upload Mode
 menu.CPUFreq=CPU Frequency
 menu.FlashFreq=Flash Frequency
 menu.FlashMode=Flash Mode
 menu.FlashSize=Flash Size
 menu.PartitionScheme=Partition Scheme
 menu.DebugLevel=Core Debug Level
-menu.PSRAM=PSRAM
-menu.LoopCore=Arduino Runs On
-menu.EventsCore=Events Run On
-menu.MemoryType=Memory Type
+# menu.PSRAM=PSRAM
+# menu.LoopCore=Arduino Runs On
+# menu.EventsCore=Events Run On
+# menu.MemoryType=Memory Type
 menu.EraseFlash=Erase All Flash Before Sketch Upload
 menu.JTAGAdapter=JTAG Adapter
-menu.ZigbeeMode=Zigbee Mode
-menu.PinNumbers=Pin Numbering
+# menu.ZigbeeMode=Zigbee Mode
+# menu.PinNumbers=Pin Numbering
 
 # Custom options
-menu.Revision=Board Revision
-menu.LORAWAN_REGION=LoRaWan Region
-menu.LoRaWanDebugLevel=LoRaWan Debug Level
-menu.LORAWAN_DEVEUI=LoRaWan DevEUI
-menu.LORAWAN_PREAMBLE_LENGTH=LoRaWan Preamble Length
-menu.SLOW_CLK_TPYE=Slow Clk Type(only for LoRaWAN)
-menu.einksize=E-Ink Display Size
-menu.NetworkLogLevel=Network Log Level
+# menu.Revision=Board Revision
+# menu.LORAWAN_REGION=LoRaWan Region
+# menu.LoRaWanDebugLevel=LoRaWan Debug Level
+# menu.LORAWAN_DEVEUI=LoRaWan DevEUI
+# menu.LORAWAN_PREAMBLE_LENGTH=LoRaWan Preamble Length
+# menu.SLOW_CLK_TPYE=Slow Clk Type(only for LoRaWAN)
+# menu.einksize=E-Ink Display Size
+# menu.NetworkLogLevel=Network Log Level
 ##############################################################
 ### DO NOT PUT BOARDS ABOVE THE OFFICIAL ESPRESSIF BOARDS! ###
 ##############################################################
