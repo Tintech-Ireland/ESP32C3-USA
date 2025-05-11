@@ -3,14 +3,14 @@
     {
       "maintainer": "Pawad Imhotep", 
       "help": {
-        "online": "http://esp32.com"
+        "online": "https://github.com/Tintech-Ireland/ESP32C3-USA/raw/refs/heads/main/README.md"
       }, 
       "websiteURL": "https://github.com/Tintech-Ireland/ESP32C3-USA", 
       "platforms": [
 		{
           "category": "ESP32", 
           "help": {
-            "online": "https://github.com/Tintech-Ireland/ESP32C3-USA"
+            "online": "https://github.com/Tintech-Ireland/ESP32C3-USA/raw/refs/heads/main/README.md"
           }, 
           "url": "https://github.com/Tintech-Ireland/ESP32C3-USA/raw/refs/heads/main/releases/esp32c3usa-0.0.6.zip", 
           "checksum": "SHA-256:a6280f8f9773becad0bdefca1c32021aacd5511a4e856b3116fa8aef415dec5f",
