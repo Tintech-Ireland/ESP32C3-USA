@@ -13,7 +13,7 @@
             "online": "https://github.com/Tintech-Ireland/ESP32C3-USA/raw/refs/heads/main/README.md"
           }, 
           "url": "https://github.com/Tintech-Ireland/ESP32C3-USA/raw/refs/heads/main/releases/esp32c3usa-0.0.6.zip", 
-          "checksum": "SHA-256:d943449c799e5d1d947a60a72fbab4139a2edc3a1e0b98ec2e1ef1d709f63386",
+          "checksum": "SHA-256:de676c473a025ba176f7b3006def8a7dd260ea07affbf005c15016214294aa81",
           "version": "0.0.6", 
           "architecture": "esp32c3usa", 
           "archiveFileName": "esp32c3usa-0.0.6.zip", 
@@ -22,7 +22,7 @@
               "name": "ESP32 C3 USA Adapter"
             }
           ], 
-          "size": "42861994",
+          "size": "42861467",
           "toolsDependencies": [
             {
               "packager": "esp32", 
