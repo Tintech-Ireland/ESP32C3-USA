@@ -12,11 +12,11 @@
           "help": {
             "online": "https://github.com/Tintech-Ireland/ESP32C3-USA/raw/refs/heads/main/README.md"
           }, 
-          "url": "https://github.com/Tintech-Ireland/ESP32C3-USA/raw/refs/heads/main/releases/esp32c3usa-0.0.6.zip", 
-          "checksum": "SHA-256:de676c473a025ba176f7b3006def8a7dd260ea07affbf005c15016214294aa81",
-          "version": "0.0.6", 
+          "url": "https://github.com/Tintech-Ireland/ESP32C3-USA/raw/refs/heads/main/releases/esp32c3usa-0.0.7.zip", 
+          "checksum": "SHA-256:1be565e1ba0d0910b965dee99a3200b8809d843f0fd164a4c12a55dc4d4db342",
+          "version": "0.0.7", 
           "architecture": "esp32c3usa", 
-          "archiveFileName": "esp32c3usa-0.0.6.zip", 
+          "archiveFileName": "esp32c3usa-0.0.7.zip", 
           "boards": [
             {
               "name": "ESP32 C3 USA Adapter"
