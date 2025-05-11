@@ -4,11 +4,11 @@
 HardwareSerial SerialPort(0); // use UART0
 #define USBSerial Serial
 
-#define UART_RX_PIN_RS232  4
-#define UART_TX_PIN_RS232  5
+#define UART_RX_PIN_RS232  RS232_RX
+#define UART_TX_PIN_RS232  RS232_TX
 
-#define UART_RX_PIN_RS485  8
-#define UART_TX_PIN_RS485  9 
+#define UART_RX_PIN_RS485  RS485_RX
+#define UART_TX_PIN_RS485  RS485_TX 
 
 // Change this depending on which port you want to test
 
