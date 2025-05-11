@@ -15,8 +15,8 @@
 #define USBSerial Serial
 
 // Pins used to connect to CAN bus transceiver:
-#define RX_PIN 06
-#define TX_PIN 07
+#define RX_PIN CAN_RX
+#define TX_PIN CAN_TX
 
 // Intervall:
 #define TRANSMIT_RATE_MS 1000

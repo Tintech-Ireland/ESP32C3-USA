@@ -4,8 +4,9 @@
 #define I2C_DEV_ADDR 0x55
 #define USBSerial Serial
 
-#define I2C_SCL_PIN 3
-#define I2C_SDA_PIN 5
+#define I2C_SCL_PIN PIN_WIRE_SCL
+#define I2C_SDA_PIN PIN_WIRE_SDA
+
 
 uint32_t i = 0;
 

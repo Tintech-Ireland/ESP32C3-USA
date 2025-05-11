@@ -4,11 +4,11 @@
 HardwareSerial SerialPort(0); // use UART0
 #define USBSerial Serial
 
-#define UART_RX_PIN_RS232  4
-#define UART_TX_PIN_RS232  5
+#define UART_RX_PIN_RS232  RS232_RX
+#define UART_TX_PIN_RS232  RS232_TX
 
-#define UART_RX_PIN_RS485  8
-#define UART_TX_PIN_RS485  9
+#define UART_RX_PIN_RS485  RS485_RX
+#define UART_TX_PIN_RS485  RS485_TX
 
 // Change this depending on which port you want to test
 
@@ -45,17 +45,17 @@ void setup() {
   USBSerial.println("Start USB");
 
   // initialize digital pin LED_BUILTIN as an output.
-  pinMode(10, OUTPUT);
+  pinMode(LED_BUILTIN, OUTPUT);
 }
 
 // the loop function runs over and over again forever
 void loop() {
-  digitalWrite(10, HIGH);  // turn the LED on (HIGH is the voltage level)
+  digitalWrite(LED_BUILTIN, HIGH);  // turn the LED on (HIGH is the voltage level)
  
   SerialPort.println("Hello There\r\n");
   USBSerial.println("Sending Data");
 
   delay(2000);                      // wait for a bit
-  digitalWrite(10, LOW);   // turn the LED off by making the voltage LOW
+  digitalWrite(LED_BUILTIN, LOW);   // turn the LED off by making the voltage LOW
 
 }

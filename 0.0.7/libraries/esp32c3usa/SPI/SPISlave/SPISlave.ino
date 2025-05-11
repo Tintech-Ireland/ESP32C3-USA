@@ -2,10 +2,11 @@
 #include "driver/spi_slave.h"
 
 #define SPI_HOST  ((spi_host_device_t)1)  // SPI2_HOST
-#define SPI_MISO  1
-#define SPI_MOSI  2
-#define SPI_SCLK  0
-#define SPI_CS    10
+// defined in pins_arduino.h
+// #define SPI_MISO  SPI_MISO
+// #define SPI_MOSI  SPI_MOSI
+// #define SPI_SCLK  SPI_SCK 
+// #define SPI_CS    SPI_CS  
 #define BUFFER_SIZE 4
 
 uint8_t tx_data[BUFFER_SIZE] = {0x35, 0x01, 0x01};
@@ -14,7 +15,7 @@ uint8_t rx_data[BUFFER_SIZE] = {0};
 HardwareSerial Serial2(1); // Available to talk to another device
 
 void setup() {
-  // pinMode(15, OUTPUT); // GPIO 15 is often the onboard LED
+  // pinMode(LED_BUILTIN, OUTPUT); 
   Serial.begin(115200);
   while (!Serial); // Wait for serial connection
   // Serial.setDebugOutput(false); // stops debug coming out of the serial port
@@ -27,7 +28,7 @@ void setup() {
   spi_bus_config_t buscfg = {
     .mosi_io_num = SPI_MOSI,
     .miso_io_num = SPI_MISO,
-    .sclk_io_num = SPI_SCLK,
+    .sclk_io_num = SPI_SCK,
     .quadwp_io_num = -1,
     .quadhd_io_num = -1,
     .max_transfer_sz = BUFFER_SIZE
@@ -43,7 +44,7 @@ void setup() {
   };
 
   // Initialize Serial2 with custom pins
-  Serial2.begin(115200, SERIAL_8N1, RX2_PIN, TX2_PIN);
+  Serial2.begin(115200, SERIAL_8N1, RS232_RX, RS232_TX);
   Serial.println("Serial 2 initialized");
   delay(1000);
 

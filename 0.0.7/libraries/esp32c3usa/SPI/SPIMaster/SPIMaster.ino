@@ -1,9 +1,9 @@
 #include <SPI.h>
 
-#define PIN_MOSI 2
-#define PIN_MISO 1
-#define PIN_SCK  0
-#define PIN_CS   10
+#define PIN_MISO SPI_MISO
+#define PIN_MOSI SPI_MOSI
+#define PIN_SCK  SPI_SCK 
+#define PIN_CS   SPI_CS  
 
 SPIClass SPI_Master(FSPI);  // FSPI is the default for ESP32-C3
 
