@@ -35,7 +35,8 @@ void setup() {
   };
 
   spi_slave_interface_config_t slvcfg = {
-    .spics_io_num = SPI_CS,
+    //.spics_io_num = SPI_CS,
+    .spics_io_num = 3,
     .flags = 0,
     .queue_size = 1,
     .mode = 0,
@@ -44,7 +45,7 @@ void setup() {
   };
 
   // Initialize Serial2 with custom pins
-  Serial2.begin(115200, SERIAL_8N1, RS232_RX, RS232_TX);
+  //Serial2.begin(115200, SERIAL_8N1, RS232_RX, RS232_TX);
   Serial.println("Serial 2 initialized");
   delay(1000);
 

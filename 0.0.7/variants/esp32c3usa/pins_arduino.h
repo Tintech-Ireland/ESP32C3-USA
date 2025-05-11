@@ -11,7 +11,7 @@
 #define  SPI_MISO 1  
 #define  SPI_MOSI 2  
 #define  SPI_SCK  0  
-#define  SPI_CS   10 
+#define  SPI_CS   3 
 
 // UART
 #define  SERIAL0_TX 18 
