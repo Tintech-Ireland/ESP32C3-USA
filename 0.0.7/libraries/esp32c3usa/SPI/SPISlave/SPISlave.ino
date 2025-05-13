@@ -35,8 +35,7 @@ void setup() {
   };
 
   spi_slave_interface_config_t slvcfg = {
-    //.spics_io_num = SPI_CS,
-    .spics_io_num = 3,
+    .spics_io_num = SPI_CS,
     .flags = 0,
     .queue_size = 1,
     .mode = 0,
