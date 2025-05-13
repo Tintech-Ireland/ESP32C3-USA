@@ -1,6 +1,8 @@
 #include <HardwareSerial.h>
 #include <Wire.h>
 
+// "USB CDC on boot" must be set to "Enabled" to activate USBSerial
+
 #define I2C_DEV_ADDR 0x55
 #define USBSerial Serial
 

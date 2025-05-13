@@ -1,6 +1,8 @@
 #include <HardwareSerial.h>
 
 // the setup function runs once when you press reset or power the board
+// "USB CDC on boot" must be set to "Enabled" to activate USBSerial
+
 HardwareSerial SerialPort(0); // use UART0
 #define USBSerial Serial
 
@@ -30,8 +32,6 @@ HardwareSerial SerialPort(0); // use UART0
 //     return len;
 // }
 
-// TWO serial ports - one goes out on UART, the Other on the USB
-// "USB CDC on boot" must be set to "disabled" to activate USBSerial
 void setup() {
   SerialPort.begin(115200, SERIAL_8N1, UART_RX_PIN, UART_TX_PIN);
   USBSerial.begin(115200) ;

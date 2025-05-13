@@ -9,6 +9,9 @@
 
   created 27-06-2023 by Stephan Martin (designer2k2)
 */
+
+// "USB CDC on boot" must be set to "Enabled" to activate USBSerial
+
 #include <HardwareSerial.h>
 #include "driver/twai.h"
 

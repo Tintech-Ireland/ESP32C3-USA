@@ -1,6 +1,8 @@
 #include <HardwareSerial.h>
 
 // the setup function runs once when you press reset or power the board
+// "USB CDC on boot" must be set to "Enabled" to activate USBSerial
+
 HardwareSerial SerialPort(0); // use UART0
 #define USBSerial Serial
 
@@ -29,9 +31,6 @@ HardwareSerial SerialPort(0); // use UART0
 //     SerialPort.println(log_buffer);
 //     return len;
 // }
-
-// TWO serial ports - one goes out on UART, the Other on the USB
-// "USB CDC on boot" must be set to "disabled" to activate USBSerial
 
 // NOTE ************************************************************
 // This fails if you set the arduino IDE core debug level

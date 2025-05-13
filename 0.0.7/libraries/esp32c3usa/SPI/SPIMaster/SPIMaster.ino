@@ -1,9 +1,15 @@
 #include <SPI.h>
 
-#define PIN_MISO SPI_MISO
-#define PIN_MOSI SPI_MOSI
-#define PIN_SCK  SPI_SCK 
-#define PIN_CS   SPI_CS  
+// ********************************************************
+// ********************************************************
+// Note - make sure the ground pins are connected between 
+// the boards. There is too much impedence using the USB 
+// lines as a long ground!!!
+// 
+// "USB CDC on boot" must be set to "Enabled" to activate USBSerial
+// 
+// ********************************************************
+// ********************************************************
 
 SPIClass SPI_Master(FSPI);  // FSPI is the default for ESP32-C3
 

@@ -1,12 +1,19 @@
 #include <SPI.h>
 #include "driver/spi_slave.h"
 
+// ********************************************************
+// ********************************************************
+// Note - make sure the ground pins are connected between 
+// the boards. There is too much impedence using the USB 
+// lines as a long ground!!!
+//
+// "USB CDC on boot" must be set to "Enabled" to activate USBSerial
+//
+// ********************************************************
+// ********************************************************
+
 #define SPI_HOST  ((spi_host_device_t)1)  // SPI2_HOST
-// defined in pins_arduino.h
-// #define SPI_MISO  SPI_MISO
-// #define SPI_MOSI  SPI_MOSI
-// #define SPI_SCLK  SPI_SCK 
-// #define SPI_CS    SPI_CS  
+// PINS are defined in pins_arduino.h
 #define BUFFER_SIZE 4
 
 uint8_t tx_data[BUFFER_SIZE] = {0x35, 0x01, 0x01};
